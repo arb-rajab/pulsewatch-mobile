@@ -120,6 +120,19 @@ This is the same class of limitation pulsewatch's own ADR-0007 names for
 its server-side push delivery (B-016: "not verified... requires real
 credentials") — stated here rather than implied or papered over.
 
+## Known issues
+
+`npm audit --omit=dev` currently reports 13 moderate-severity advisories
+(`decode-uri-component`, `uuid`) that are all transitive dependencies of
+`expo`'s and `expo-router`'s own build/CLI tooling
+(`@expo/config-plugins`, `@expo/cli`, `xcode`, ...) — none of it ships in
+the app bundle a device runs. `npm audit fix --force` "fixes" this only
+by downgrading `expo`/`expo-router` to years-old major versions, which
+would be a much larger regression than the advisories themselves. CI's
+`npm audit` step is scoped to `--audit-level=high` for that reason and
+will still fail on anything worse; revisit once SDK 57's own tooling
+picks up the fix upstream.
+
 ## Project layout
 
 ```
