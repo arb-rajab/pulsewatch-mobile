@@ -133,6 +133,25 @@ would be a much larger regression than the advisories themselves. CI's
 will still fail on anything worse; revisit once SDK 57's own tooling
 picks up the fix upstream.
 
+**No branch protection on `main`.** GitHub's branch API reports `main` as
+`"protected": false` — there is no branch protection rule at all, so none
+of CI's three jobs (`app`: typecheck/lint/tests/`npm audit`; `gitleaks`:
+secret scanning; `codeql`: static analysis) are actually required to pass
+before a PR can merge. CI being green has never been enforced here, only
+informative — the same gap this portfolio found (and fixed) in
+`bookslot-mobile`. (Separately: `CLAUDE.md`'s session-continuity notes say
+the repo's default branch setting was still the old rebuild branch as of
+2026-09-15 with no tool able to change it — that part is now resolved;
+GitHub's repository metadata confirms `default_branch` is `main`.) No tool
+available to any session using this portfolio's GitHub MCP tooling can read
+or write branch-protection settings (no such endpoint is exposed, and raw
+API/`gh`-CLI fallback is out of policy), so this can only be fixed by a
+human with repo admin access: GitHub → Settings → Branches → add a rule for
+`main` → require status checks `app`, `gitleaks`, and `codeql` →
+(recommended) require a pull request before merging. None of these three
+jobs are path-filtered, so requiring all of them carries no risk of
+permanently blocking an unrelated PR.
+
 ## Project layout
 
 ```
