@@ -4,6 +4,10 @@ import { router } from 'expo-router';
 
 import { api } from '../../lib/api-client';
 import { useAuth } from '../../lib/auth-context';
+import {
+  useDeviceRegistrationStatus,
+  type DeviceRegistrationStatus,
+} from '../../lib/device-registration-status';
 import { useAsync } from '../../lib/use-async';
 import type { DeviceToken } from '../../lib/api-types';
 
@@ -13,8 +17,24 @@ function deviceStatusLabel(device: DeviceToken): string {
   return 'Active';
 }
 
+// Only failures are worth an operator's attention; in-flight and success are
+// already legible from the device list below.
+function registrationFailureMessage(status: DeviceRegistrationStatus): string | null {
+  if (status.state !== 'failed') return null;
+  switch (status.reason) {
+    case 'permission-denied':
+      return "Notifications are turned off for PulseWatch on this device, so you won't receive alerts here. Enable them in your device settings, then reopen the app.";
+    case 'unsupported-device':
+      return "This device's push token type isn't supported by the PulseWatch server, so you won't receive alerts here.";
+    case 'request-failed':
+      return `Couldn't register this device for alerts${status.message ? ` (${status.message})` : ''}, so you won't receive them here. Check your connection and reopen the app to try again.`;
+  }
+}
+
 export default function SettingsScreen() {
   const { session, logout } = useAuth();
+  const registrationStatus = useDeviceRegistrationStatus();
+  const registrationFailure = registrationFailureMessage(registrationStatus);
   const load = useCallback(() => api.listDeviceTokens(), []);
   const { data, error, loading, refresh } = useAsync(load, []);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -45,6 +65,12 @@ export default function SettingsScreen() {
       {session && (
         <Text style={styles.email} testID="settings-email">
           {session.email}
+        </Text>
+      )}
+
+      {registrationFailure && (
+        <Text style={styles.errorText} testID="device-registration-error">
+          {registrationFailure}
         </Text>
       )}
 
