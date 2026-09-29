@@ -5,6 +5,10 @@ import { router } from 'expo-router';
 import SettingsScreen from '../settings';
 import { api } from '../../../lib/api-client';
 import { useAuth } from '../../../lib/auth-context';
+import {
+  resetDeviceRegistrationStatus,
+  setDeviceRegistrationStatus,
+} from '../../../lib/device-registration-status';
 import type { DeviceToken } from '../../../lib/api-types';
 
 jest.mock('expo-router', () => ({
@@ -38,6 +42,7 @@ function makeDevice(overrides: Partial<DeviceToken> = {}): DeviceToken {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetDeviceRegistrationStatus();
 });
 
 describe('SettingsScreen', () => {
@@ -103,5 +108,40 @@ describe('SettingsScreen', () => {
 
     await waitFor(() => expect(logout).toHaveBeenCalled());
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login'));
+  });
+
+  describe('this-device registration failure', () => {
+    beforeEach(() => {
+      mockUseAuth.mockReturnValue({
+        session: { operatorId: 'op-1', email: 'a@b.com' },
+        logout: jest.fn(),
+      });
+      (api.listDeviceTokens as jest.Mock).mockResolvedValue([]);
+    });
+
+    it.each([
+      ['permission-denied', undefined, /Notifications are turned off/],
+      ['unsupported-device', undefined, /token type isn't supported/],
+      ['request-failed', 'Network request failed', /Couldn't register.*Network request failed/],
+    ] as const)('explains a %s failure', async (reason, message, expected) => {
+      setDeviceRegistrationStatus({ state: 'failed', reason, message });
+
+      await render(<SettingsScreen />);
+
+      expect(screen.getByTestId('device-registration-error')).toHaveTextContent(expected);
+      await waitFor(() => expect(screen.getByText('No devices registered.')).toBeTruthy());
+    });
+
+    it.each([{ state: 'idle' }, { state: 'registering' }, { state: 'registered' }] as const)(
+      'shows no warning while registration is $state',
+      async (status) => {
+        setDeviceRegistrationStatus(status);
+
+        await render(<SettingsScreen />);
+
+        expect(screen.queryByTestId('device-registration-error')).toBeNull();
+        await waitFor(() => expect(screen.getByText('No devices registered.')).toBeTruthy());
+      }
+    );
   });
 });
