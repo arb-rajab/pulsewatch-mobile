@@ -83,3 +83,20 @@
   pattern already used for the moderate findings, just stricter/dated), or
   (b) accept the `expo`/`expo-router` downgrade, or (c) leave CI red on
   this check until upstream ships a fix.
+- **`npm test`'s "test" CI step is genuinely flaky** (confirmed 2026-10-02
+  by capturing the actual failing step's own output, not a fresh re-run —
+  a re-run alone can pass even when the original run flaked, which is
+  misleading). Across ~6 CI runs on one branch with no source changes in
+  between, it failed twice: both times
+  `SettingsScreen › shows the signed-in operator email and their devices`
+  (a pre-existing test, not a new one) threw `Exceeded timeout of 5000 ms
+  for a test` — Jest's default per-test timeout, under whatever CPU
+  contention that run's runner happened to have (this suite's default
+  jest config runs test files in parallel workers, not `--runInBand`).
+  Re-running the same commit's failed jobs (no code change) passed
+  cleanly. If `npm test` fails in CI on an unrelated, unmodified test with
+  this exact "Exceeded timeout of 5000 ms" message, don't treat it as a
+  real regression from whatever change is in the PR — re-run the job
+  first. If it keeps happening, the real fix is either raising that one
+  test's timeout (`it('...', async () => {...}, 10000)`) or adding
+  `--runInBand` to the `test` script, not chasing it as a logic bug.
