@@ -40,3 +40,63 @@
   in `.github/workflows/ci.yml`. Running plain `npm install` locally
   without the flag produces an ERESOLVE error that looks like a real
   break but isn't — it's this same known peer-dep shape.
+- **This session (2026-10-02, the settings.tsx silent-failure fix) hit a
+  sandbox network policy that blocks `registry.npmjs.org` outright** —
+  every `npm install`/`npm ci` attempt failed with `403`/`E403 Host not
+  in allowlist: registry.npmjs.org`, both via the local agent proxy and
+  via a direct connection (the proxy's own `/__agentproxy/status`
+  endpoint classified it as `connect_rejected`/"policy denial", the same
+  class the README says not to retry). `pypi.org`, `codeload.github.com`
+  and `raw.githubusercontent.com` were blocked the same way in the same
+  session; `api.github.com` and plain git clone/push were NOT blocked.
+  This made `node_modules` impossible to install, so `npm run
+  typecheck`/`npm run lint`/`npm test` could not be run locally that
+  session — the change was pushed and verified via `.github/workflows/
+  ci.yml` on a real GitHub Actions runner instead (which has normal
+  internet access), same "trust CI, don't fight a sandbox network wall"
+  pattern this portfolio's other repos already document for Docker/
+  Testcontainers-class blocks. If a future session hits this same `403`
+  from `registry.npmjs.org`, don't loop retrying installs or hunting for
+  a workaround — confirm quickly via `curl -sS -o /dev/null -w '%{http_code}\n'
+  https://registry.npmjs.org/` and go straight to push-and-watch-CI if it's
+  still blocked. Unclear whether this is permanent or was specific to that
+  session's sandbox instance — re-check rather than assuming either way.
+- **A new HIGH-severity `npm audit` finding appeared on 2026-10-02**
+  (`node-forge`, advisory `GHSA-86w9-cpqp-85rv`, RSA PKCS#1 v1.5
+  signature-verification bypass), on top of the moderate ones documented
+  above — same shape (transitively via expo's own bundled `@expo/cli`
+  build tooling: `node_modules/expo/node_modules/@expo/cli` ->
+  `@expo/code-signing-certificates` -> `node-forge`; never shipped in the
+  app bundle), same problem (`npm audit fix --force` only "fixes" it by
+  downgrading `expo` to `44.0.6` — a real regression). A web search found
+  several unrelated projects hitting the identical advisory at the same
+  time with no patched `node-forge` release yet, so this looks like an
+  ecosystem-wide gap, not something specific to this repo. **This session
+  did NOT touch `.github/workflows/ci.yml`'s `npm audit` step or add any
+  allowlist/suppression for it** — weakening an existing CI security gate
+  is exactly the kind of change that should get a human's explicit
+  sign-off rather than an agent's own judgment call, even when the
+  reasoning looks sound. If `npm audit --omit=dev --audit-level=high`
+  is still failing CI for this exact advisory in a future session, don't
+  silently work around it again — ask the repo owner whether to (a)
+  accept a dated, narrowly-scoped allowlist for this one GHSA id (same
+  pattern already used for the moderate findings, just stricter/dated), or
+  (b) accept the `expo`/`expo-router` downgrade, or (c) leave CI red on
+  this check until upstream ships a fix.
+- **`npm test`'s "test" CI step is genuinely flaky** (confirmed 2026-10-02
+  by capturing the actual failing step's own output, not a fresh re-run —
+  a re-run alone can pass even when the original run flaked, which is
+  misleading). Across ~6 CI runs on one branch with no source changes in
+  between, it failed twice: both times
+  `SettingsScreen › shows the signed-in operator email and their devices`
+  (a pre-existing test, not a new one) threw `Exceeded timeout of 5000 ms
+  for a test` — Jest's default per-test timeout, under whatever CPU
+  contention that run's runner happened to have (this suite's default
+  jest config runs test files in parallel workers, not `--runInBand`).
+  Re-running the same commit's failed jobs (no code change) passed
+  cleanly. If `npm test` fails in CI on an unrelated, unmodified test with
+  this exact "Exceeded timeout of 5000 ms" message, don't treat it as a
+  real regression from whatever change is in the PR — re-run the job
+  first. If it keeps happening, the real fix is either raising that one
+  test's timeout (`it('...', async () => {...}, 10000)`) or adding
+  `--runInBand` to the `test` script, not chasing it as a logic bug.

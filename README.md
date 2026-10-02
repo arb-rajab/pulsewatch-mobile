@@ -133,6 +133,20 @@ would be a much larger regression than the advisories themselves. CI's
 will still fail on anything worse; revisit once SDK 57's own tooling
 picks up the fix upstream.
 
+**One high-severity finding (`node-forge` / `GHSA-86w9-cpqp-85rv`, an RSA
+PKCS#1 v1.5 signature-verification bypass) is explicitly, narrowly
+allowlisted** rather than just relying on `--audit-level=high` — same
+shape as the moderate findings above (reached only transitively through
+`expo`'s own bundled `@expo/cli` build tooling, never shipped in the app
+bundle), confirmed ecosystem-wide with no patched `node-forge` release
+yet as of 2026-10-02. `scripts/check-npm-audit.mjs` runs the real audit
+and fails on anything at/above `--audit-level=high` that ISN'T this one
+advisory, so a genuinely new high/critical finding still blocks CI. The
+allowlist entry itself expires 2026-11-15, after which the check fails
+outright until a human either renews it (if still unfixed upstream) or
+removes it (if a fix finally shipped) — see the script's own header for
+the full reasoning.
+
 **No branch protection on `main`.** GitHub's branch API reports `main` as
 `"protected": false` — there is no branch protection rule at all, so none
 of CI's three jobs (`app`: typecheck/lint/tests/`npm audit`; `gitleaks`:
