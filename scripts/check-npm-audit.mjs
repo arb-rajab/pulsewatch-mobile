@@ -75,29 +75,65 @@ function runAudit() {
 
 // `npm audit --json` propagates severity up the WHOLE dependency chain: if
 // leaf package D has a real advisory, every package that depends on it
-// (C -> B -> A) also gets its own top-level entry in `vulnerabilities` at
-// the same (or higher) severity — but C/B/A's own `via` arrays list the
-// next package DOWN the chain as a plain package-name *string*, not the
-// advisory object. Only the leaf (D) has `via` entries that are objects
-// with a `url`. So resolving "is this finding fully explained by the
-// allowlist" has to walk the whole chain, not just look at one level.
-function adviceUrlsFor(vuln, vulnerabilitiesByName, seen = new Set()) {
-  const urls = [];
-  if (seen.has(vuln.name)) {
-    return urls; // cycle guard; shouldn't happen, but never infinite-loop.
-  }
-  seen.add(vuln.name);
-  for (const via of vuln.via ?? []) {
-    if (via && typeof via === "object" && typeof via.url === "string") {
-      urls.push(via.url);
-    } else if (typeof via === "string") {
-      const next = vulnerabilitiesByName[via];
-      if (next) {
-        urls.push(...adviceUrlsFor(next, vulnerabilitiesByName, seen));
+// (C -> B -> A) also gets its own top-level entry in `vulnerabilities`, and
+// that entry's `severity` field is the MAX severity of every advisory
+// reachable anywhere below it — not necessarily the severity of any single
+// advisory. C/B/A's own `via` arrays list the next package DOWN the chain as
+// a plain package-name *string*, not the advisory object; only the actual
+// leaf advisory entries are objects with a `url` AND THEIR OWN `severity`.
+//
+// This matters concretely in this repo: `uuid`'s real advisory
+// (GHSA-w5hq-g745-h8pq) is a long-documented MODERATE (6.3) finding — one of
+// the 13 moderate findings README's "Known issues" already accepts and that
+// `--audit-level=high` is specifically scoped to ignore. It was never
+// supposed to need an allowlist entry. But `uuid` and `node-forge` (the real
+// high-severity, allowlisted finding) both sit transitively under the same
+// `@expo/cli`/`expo` package entries, so npm audit's rolled-up severity for
+// `@expo/cli`/`expo` is "high" (the max of the two), and a check that only
+// looked at the rolled-up container severity would wrongly treat `uuid`'s
+// advisory as something that needs allowlisting too, when its own severity
+// never crossed the --audit-level=high threshold at all.
+//
+// So: walk the WHOLE report and collect every leaf advisory object (the ones
+// with their own `url` + `severity`), deduped by url. Only a leaf whose OWN
+// severity is high/critical needs an allowlist entry — a moderate leaf
+// dragged into a "high" container by an unrelated sibling advisory does not.
+function collectLeafAdvisories(vulnerabilitiesByName) {
+  const leavesByUrl = new Map();
+  for (const vuln of Object.values(vulnerabilitiesByName)) {
+    for (const via of vuln.via ?? []) {
+      if (via && typeof via === "object" && typeof via.url === "string") {
+        leavesByUrl.set(via.url, via);
       }
     }
   }
-  return urls;
+  return leavesByUrl;
+}
+
+// For reporting purposes only: which top-level package name(s) a given leaf
+// advisory url is reachable from, so console/annotation output can still say
+// "node-forge (via expo -> @expo/cli -> ...)" rather than just a bare URL.
+function topLevelNamesReaching(url, vulnerabilitiesByName) {
+  const names = [];
+  for (const vuln of Object.values(vulnerabilitiesByName)) {
+    const stack = [...(vuln.via ?? [])];
+    const seen = new Set();
+    while (stack.length > 0) {
+      const via = stack.pop();
+      if (via && typeof via === "object" && via.url === url) {
+        names.push(vuln.name);
+        break;
+      }
+      if (typeof via === "string" && !seen.has(via)) {
+        seen.add(via);
+        const next = vulnerabilitiesByName[via];
+        if (next) {
+          stack.push(...(next.via ?? []));
+        }
+      }
+    }
+  }
+  return names;
 }
 
 function main() {
@@ -121,32 +157,45 @@ function main() {
 
   const report = runAudit();
   const vulnerabilitiesByName = report.vulnerabilities ?? {};
-  const vulnerabilities = Object.values(vulnerabilitiesByName);
-  const atOrAboveHigh = vulnerabilities.filter((v) =>
-    v.severity === "high" || v.severity === "critical",
+
+  // Evaluate each LEAF advisory's own severity — never the rolled-up
+  // container severity npm audit stamps on `@expo/cli`/`expo` — so a
+  // moderate finding (like uuid's) dragged into a "high" container by an
+  // unrelated sibling advisory (like node-forge's) isn't mistaken for
+  // something that needs its own allowlist entry.
+  const leafAdvisoriesByUrl = collectLeafAdvisories(vulnerabilitiesByName);
+  const highOrCriticalLeaves = [...leafAdvisoriesByUrl.values()].filter(
+    (a) => a.severity === "high" || a.severity === "critical",
   );
 
-  if (atOrAboveHigh.length === 0) {
+  if (highOrCriticalLeaves.length === 0) {
     console.log("npm audit: no high/critical findings. Clean.");
     process.exit(0);
   }
 
-  const allowedIds = new Set(ALLOWLIST.map((e) => e.id));
+  const allowedIds = [...new Set(ALLOWLIST.map((e) => e.id))];
   const unexplained = [];
+  const explained = [];
 
-  for (const vuln of atOrAboveHigh) {
-    const urls = adviceUrlsFor(vuln, vulnerabilitiesByName);
-    const isAllowlisted =
-      urls.length > 0 &&
-      urls.every((url) => [...allowedIds].some((id) => url.includes(id)));
-    if (!isAllowlisted) {
-      unexplained.push({ name: vuln.name, severity: vuln.severity, urls });
+  for (const advisory of highOrCriticalLeaves) {
+    const matchedId = allowedIds.find((id) => advisory.url.includes(id));
+    const names = topLevelNamesReaching(advisory.url, vulnerabilitiesByName);
+    const entry = {
+      title: advisory.title ?? advisory.name,
+      severity: advisory.severity,
+      url: advisory.url,
+      via: names.join(", ") || "(unknown path)",
+    };
+    if (matchedId) {
+      explained.push(entry);
+    } else {
+      unexplained.push(entry);
     }
   }
 
   if (unexplained.length > 0) {
     const summary = unexplained
-      .map((u) => `${u.name} (${u.severity}): ${u.urls.join(", ") || "no advisory URL"}`)
+      .map((u) => `${u.title} (${u.severity}) via ${u.via}: ${u.url}`)
       .join(" | ");
     // Also as a GitHub Actions error annotation, so it's visible via the
     // check-run annotations API even when the raw job log isn't reachable.
@@ -154,21 +203,21 @@ function main() {
       `::error title=npm audit - unexplained findings::${summary}`,
     );
     console.error(
-      "npm audit found high/critical findings NOT covered by the " +
+      "npm audit found high/critical advisories NOT covered by the " +
         "allowlist in scripts/check-npm-audit.mjs:",
     );
     for (const u of unexplained) {
-      console.error(`  - ${u.name} (${u.severity}): ${u.urls.join(", ") || "no advisory URL"}`);
+      console.error(`  - ${u.title} (${u.severity}) via ${u.via}: ${u.url}`);
     }
     process.exit(1);
   }
 
   console.log(
-    `npm audit: ${atOrAboveHigh.length} high/critical finding(s), all ` +
-      "covered by the dated allowlist (see scripts/check-npm-audit.mjs):",
+    `npm audit: ${highOrCriticalLeaves.length} high/critical advisory(ies), ` +
+      "all covered by the dated allowlist (see scripts/check-npm-audit.mjs):",
   );
-  for (const vuln of atOrAboveHigh) {
-    console.log(`  - ${vuln.name} (${vuln.severity})`);
+  for (const e of explained) {
+    console.log(`  - ${e.title} (${e.severity}) via ${e.via}`);
   }
   process.exit(0);
 }
