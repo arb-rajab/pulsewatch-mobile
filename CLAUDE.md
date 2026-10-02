@@ -31,7 +31,8 @@
   `uuid`) with no non-breaking fix available (`npm audit fix --force`
   only "fixes" it by downgrading `expo-router` to `5.1.11`/`expo` to
   `46.0.21` — a real regression, not acceptable). This is why CI scopes
-  the audit step to `--audit-level=high`. Seeing the moderate list again
+  the audit to `--audit-level=high` (now via `scripts/check-npm-audit.mjs`,
+  see the node-forge note below). Seeing the moderate list again
   on a fresh `npm audit --omit=dev` is not a new regression — see
   README's "Known issues".
 - **`npm install`/`npm ci` needs `--legacy-peer-deps`** throughout this
@@ -71,18 +72,18 @@
   downgrading `expo` to `44.0.6` — a real regression). A web search found
   several unrelated projects hitting the identical advisory at the same
   time with no patched `node-forge` release yet, so this looks like an
-  ecosystem-wide gap, not something specific to this repo. **This session
-  did NOT touch `.github/workflows/ci.yml`'s `npm audit` step or add any
-  allowlist/suppression for it** — weakening an existing CI security gate
-  is exactly the kind of change that should get a human's explicit
-  sign-off rather than an agent's own judgment call, even when the
-  reasoning looks sound. If `npm audit --omit=dev --audit-level=high`
-  is still failing CI for this exact advisory in a future session, don't
-  silently work around it again — ask the repo owner whether to (a)
-  accept a dated, narrowly-scoped allowlist for this one GHSA id (same
-  pattern already used for the moderate findings, just stricter/dated), or
-  (b) accept the `expo`/`expo-router` downgrade, or (c) leave CI red on
-  this check until upstream ships a fix.
+  ecosystem-wide gap, not something specific to this repo. **Resolution:
+  a dated, narrowly-scoped allowlist for this one GHSA id.** The CI
+  `npm audit` step now runs `node scripts/check-npm-audit.mjs` instead of
+  plain `npm audit --omit=dev --audit-level=high` (commit `919450b`,
+  merged to `main` with PR #3 at the repo owner's request). The script
+  still fails on any other high/critical leaf advisory; only
+  `GHSA-86w9-cpqp-85rv` passes, and only until **2026-11-15**, after which
+  the check fails outright. When it does: re-check whether `node-forge`
+  (or `@expo/code-signing-certificates`) has shipped a fix — if so, drop
+  the entry; if not, ask the repo owner before pushing the expiry out.
+  Don't widen the allowlist to any other advisory without the owner's
+  explicit sign-off — loosening this gate is their call, not an agent's.
 - **`npm test`'s "test" CI step is genuinely flaky** (confirmed 2026-10-02
   by capturing the actual failing step's own output, not a fresh re-run —
   a re-run alone can pass even when the original run flaked, which is
@@ -97,6 +98,6 @@
   cleanly. If `npm test` fails in CI on an unrelated, unmodified test with
   this exact "Exceeded timeout of 5000 ms" message, don't treat it as a
   real regression from whatever change is in the PR — re-run the job
-  first. If it keeps happening, the real fix is either raising that one
-  test's timeout (`it('...', async () => {...}, 10000)`) or adding
-  `--runInBand` to the `test` script, not chasing it as a logic bug.
+  first. PR #3 raised Jest's default `testTimeout` to 10000 in
+  `jest.config.js` for this; if timeouts still recur, the next step is
+  adding `--runInBand` to the `test` script, not chasing it as a logic bug.
