@@ -83,6 +83,30 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(api.listDeviceTokens).toHaveBeenCalledTimes(2));
   });
 
+  it('surfaces an error and stops the spinner when revoking a device fails', async () => {
+    mockUseAuth.mockReturnValue({
+      session: { operatorId: 'op-1', email: 'a@b.com' },
+      logout: jest.fn(),
+    });
+    (api.listDeviceTokens as jest.Mock).mockResolvedValue([makeDevice({ id: 'dt-1' })]);
+    (api.unregisterDeviceToken as jest.Mock).mockRejectedValue(new Error('Network request failed'));
+
+    await render(<SettingsScreen />);
+    await waitFor(() => expect(screen.getByTestId('revoke-device-dt-1')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('revoke-device-dt-1'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('revoke-device-error')).toHaveTextContent('Network request failed')
+    );
+    // The spinner's `finally` cleanup still runs: the button goes back to
+    // its normal, non-disabled "Revoke" label rather than being stuck.
+    expect(screen.getByTestId('revoke-device-dt-1')).toBeEnabled();
+    expect(screen.getByText('Revoke')).toBeTruthy();
+    // And the list wasn't optimistically refreshed on a failed revoke.
+    expect(api.listDeviceTokens).toHaveBeenCalledTimes(1);
+  });
+
   it('does not show a revoke button for an already-revoked device', async () => {
     mockUseAuth.mockReturnValue({
       session: { operatorId: 'op-1', email: 'a@b.com' },
@@ -108,6 +132,24 @@ describe('SettingsScreen', () => {
 
     await waitFor(() => expect(logout).toHaveBeenCalled());
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login'));
+  });
+
+  it('surfaces an error and stops the spinner when sign-out fails', async () => {
+    const logout = jest.fn().mockRejectedValue(new Error('Network request failed'));
+    mockUseAuth.mockReturnValue({ session: { operatorId: 'op-1', email: 'a@b.com' }, logout });
+    (api.listDeviceTokens as jest.Mock).mockResolvedValue([]);
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByTestId('sign-out'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sign-out-error')).toHaveTextContent('Network request failed')
+    );
+    // Never navigated away, and the spinner's `finally` cleanup still ran:
+    // the button goes back to its normal, non-disabled state.
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.getByTestId('sign-out')).toBeEnabled();
+    expect(screen.getByText('Sign out')).toBeTruthy();
   });
 
   describe('this-device registration failure', () => {

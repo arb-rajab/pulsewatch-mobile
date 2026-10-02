@@ -31,6 +31,14 @@ function registrationFailureMessage(status: DeviceRegistrationStatus): string | 
   }
 }
 
+// Same "only tell the operator what they need to act on" shape as
+// registrationFailureMessage above: a thrown ApiError/Error already carries
+// a message worth showing, anything else falls back to a generic one rather
+// than surfacing "[object Object]" or similar.
+function actionFailureMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 export default function SettingsScreen() {
   const { session, logout } = useAuth();
   const registrationStatus = useDeviceRegistrationStatus();
@@ -38,13 +46,20 @@ export default function SettingsScreen() {
   const load = useCallback(() => api.listDeviceTokens(), []);
   const { data, error, loading, refresh } = useAsync(load, []);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const onRevoke = async (id: string) => {
     setRevokingId(id);
+    setRevokeError(null);
     try {
       await api.unregisterDeviceToken(id);
       refresh();
+    } catch (err) {
+      setRevokeError(
+        actionFailureMessage(err, "Couldn't revoke this device. Check your connection and try again.")
+      );
     } finally {
       setRevokingId(null);
     }
@@ -52,9 +67,14 @@ export default function SettingsScreen() {
 
   const onSignOut = async () => {
     setSigningOut(true);
+    setSignOutError(null);
     try {
       await logout();
       router.replace('/login');
+    } catch (err) {
+      setSignOutError(
+        actionFailureMessage(err, "Couldn't sign you out. Check your connection and try again.")
+      );
     } finally {
       setSigningOut(false);
     }
@@ -79,6 +99,12 @@ export default function SettingsScreen() {
       {error && (
         <Text style={styles.errorText} testID="devices-error">
           {error.message}
+        </Text>
+      )}
+
+      {revokeError && (
+        <Text style={styles.errorText} testID="revoke-device-error">
+          {revokeError}
         </Text>
       )}
 
@@ -113,6 +139,12 @@ export default function SettingsScreen() {
           </View>
         )}
       />
+
+      {signOutError && (
+        <Text style={styles.errorText} testID="sign-out-error">
+          {signOutError}
+        </Text>
+      )}
 
       <Pressable
         testID="sign-out"

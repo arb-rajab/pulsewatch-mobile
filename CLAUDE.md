@@ -40,3 +40,24 @@
   in `.github/workflows/ci.yml`. Running plain `npm install` locally
   without the flag produces an ERESOLVE error that looks like a real
   break but isn't — it's this same known peer-dep shape.
+- **This session (2026-10-02, the settings.tsx silent-failure fix) hit a
+  sandbox network policy that blocks `registry.npmjs.org` outright** —
+  every `npm install`/`npm ci` attempt failed with `403`/`E403 Host not
+  in allowlist: registry.npmjs.org`, both via the local agent proxy and
+  via a direct connection (the proxy's own `/__agentproxy/status`
+  endpoint classified it as `connect_rejected`/"policy denial", the same
+  class the README says not to retry). `pypi.org`, `codeload.github.com`
+  and `raw.githubusercontent.com` were blocked the same way in the same
+  session; `api.github.com` and plain git clone/push were NOT blocked.
+  This made `node_modules` impossible to install, so `npm run
+  typecheck`/`npm run lint`/`npm test` could not be run locally that
+  session — the change was pushed and verified via `.github/workflows/
+  ci.yml` on a real GitHub Actions runner instead (which has normal
+  internet access), same "trust CI, don't fight a sandbox network wall"
+  pattern this portfolio's other repos already document for Docker/
+  Testcontainers-class blocks. If a future session hits this same `403`
+  from `registry.npmjs.org`, don't loop retrying installs or hunting for
+  a workaround — confirm quickly via `curl -sS -o /dev/null -w '%{http_code}\n'
+  https://registry.npmjs.org/` and go straight to push-and-watch-CI if it's
+  still blocked. Unclear whether this is permanent or was specific to that
+  session's sandbox instance — re-check rather than assuming either way.
