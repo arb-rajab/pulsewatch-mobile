@@ -31,23 +31,33 @@ jobs:
       - name: test
         run: npm test -- --ci
 
+      # --audit-level=high: at SDK 57, `expo`'s own build/CLI tooling
+      # (@expo/config-plugins and friends — never shipped in the app
+      # bundle) pulls in moderate-severity `decode-uri-component`/`uuid`
+      # advisories with no fix available yet (see README). A high/critical
+      # finding still fails the build; the known moderate ones don't block.
+      - name: npm audit
+        id: audit
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
       # TEMPORARY debug step (to be removed before merge): the sandbox that
       # authored this PR can reach api.github.com but not the Azure Blob
       # storage GitHub Actions normally redirects job-log downloads to, so
-      # posts the tail of the test output as a PR comment instead of reading
-      # it from the Actions UI/log API.
-      - name: debug - post test output on failure
-        if: failure() && github.event_name == 'pull_request'
+      # posts the audit output as a PR comment instead of reading it from
+      # the Actions UI/log API.
+      - name: debug - post npm audit output on failure
+        if: steps.audit.outcome == 'failure' && github.event_name == 'pull_request'
         env:
           GH_DEBUG_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm test -- --ci > /tmp/test-output.txt 2>&1 || true
-          tail -c 60000 /tmp/test-output.txt > /tmp/test-output-trunc.txt
+          npm audit --omit=dev --audit-level=high --json > /tmp/audit-output.txt 2>&1 || true
+          tail -c 60000 /tmp/audit-output.txt > /tmp/audit-output-trunc.txt
           python3 - <<'PYEOF'
           import json, os, urllib.request
-          with open('/tmp/test-output-trunc.txt') as f:
+          with open('/tmp/audit-output-trunc.txt') as f:
               body_text = f.read()
-          payload = json.dumps({"body": "### Debug: test output\n```\n" + body_text + "\n```"}).encode()
+          payload = json.dumps({"body": "### Debug: npm audit output\n```\n" + body_text + "\n```"}).encode()
           req = urllib.request.Request(
               f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/${{ github.event.pull_request.number }}/comments",
               data=payload,
@@ -61,13 +71,9 @@ jobs:
           urllib.request.urlopen(req)
           PYEOF
 
-      # --audit-level=high: at SDK 57, `expo`'s own build/CLI tooling
-      # (@expo/config-plugins and friends — never shipped in the app
-      # bundle) pulls in moderate-severity `decode-uri-component`/`uuid`
-      # advisories with no fix available yet (see README). A high/critical
-      # finding still fails the build; the known moderate ones don't block.
-      - name: npm audit
-        run: npm audit --omit=dev --audit-level=high
+      - name: fail job if npm audit failed
+        if: steps.audit.outcome == 'failure'
+        run: exit 1
 
   gitleaks:
     name: Secret scanning (gitleaks)
