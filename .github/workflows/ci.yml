@@ -37,43 +37,32 @@ jobs:
       # advisories with no fix available yet (see README). A high/critical
       # finding still fails the build; the known moderate ones don't block.
       - name: npm audit
-        id: audit
         run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
 
       # TEMPORARY debug step (to be removed before merge): the sandbox that
       # authored this PR can reach api.github.com but not the Azure Blob
       # storage GitHub Actions normally redirects job-log downloads to, so
-      # posts the audit output as a PR comment instead of reading it from
-      # the Actions UI/log API.
-      - name: debug - post npm audit output on failure
-        if: steps.audit.outcome == 'failure' && github.event_name == 'pull_request'
+      # posts the tail of whichever earlier step failed (test or audit) as
+      # a PR comment instead of reading it from the Actions UI/log API.
+      - name: debug - post failure output
+        if: failure() && github.event_name == 'pull_request'
         env:
           GH_DEBUG_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm audit --omit=dev --audit-level=high --json > /tmp/audit-output.txt 2>&1 || true
-          tail -c 60000 /tmp/audit-output.txt > /tmp/audit-output-trunc.txt
-          python3 - <<'PYEOF'
-          import json, os, urllib.request
-          with open('/tmp/audit-output-trunc.txt') as f:
-              body_text = f.read()
-          payload = json.dumps({"body": "### Debug: npm audit output\n```\n" + body_text + "\n```"}).encode()
-          req = urllib.request.Request(
-              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/${{ github.event.pull_request.number }}/comments",
-              data=payload,
-              method="POST",
-              headers={
-                  "Authorization": f"Bearer {os.environ['GH_DEBUG_TOKEN']}",
-                  "Accept": "application/vnd.github+json",
-                  "Content-Type": "application/json",
-              },
-          )
-          urllib.request.urlopen(req)
-          PYEOF
-
-      - name: fail job if npm audit failed
-        if: steps.audit.outcome == 'failure'
-        run: exit 1
+          {
+            echo "=== npm test ==="
+            npm test -- --ci
+            echo "=== npm audit ==="
+            npm audit --omit=dev --audit-level=high
+          } > /tmp/debug-output.txt 2>&1 || true
+          tail -c 60000 /tmp/debug-output.txt > /tmp/debug-output-trunc.txt
+          jq -Rs '{body: ("### Debug: failure output\n```\n" + . + "\n```")}' /tmp/debug-output-trunc.txt > /tmp/payload.json
+          curl -sS -X POST \
+            -H "Authorization: Bearer $GH_DEBUG_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d @/tmp/payload.json
 
   gitleaks:
     name: Secret scanning (gitleaks)
