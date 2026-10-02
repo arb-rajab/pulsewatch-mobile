@@ -61,3 +61,25 @@
   https://registry.npmjs.org/` and go straight to push-and-watch-CI if it's
   still blocked. Unclear whether this is permanent or was specific to that
   session's sandbox instance — re-check rather than assuming either way.
+- **A new HIGH-severity `npm audit` finding appeared on 2026-10-02**
+  (`node-forge`, advisory `GHSA-86w9-cpqp-85rv`, RSA PKCS#1 v1.5
+  signature-verification bypass), on top of the moderate ones documented
+  above — same shape (transitively via expo's own bundled `@expo/cli`
+  build tooling: `node_modules/expo/node_modules/@expo/cli` ->
+  `@expo/code-signing-certificates` -> `node-forge`; never shipped in the
+  app bundle), same problem (`npm audit fix --force` only "fixes" it by
+  downgrading `expo` to `44.0.6` — a real regression). A web search found
+  several unrelated projects hitting the identical advisory at the same
+  time with no patched `node-forge` release yet, so this looks like an
+  ecosystem-wide gap, not something specific to this repo. **This session
+  did NOT touch `.github/workflows/ci.yml`'s `npm audit` step or add any
+  allowlist/suppression for it** — weakening an existing CI security gate
+  is exactly the kind of change that should get a human's explicit
+  sign-off rather than an agent's own judgment call, even when the
+  reasoning looks sound. If `npm audit --omit=dev --audit-level=high`
+  is still failing CI for this exact advisory in a future session, don't
+  silently work around it again — ask the repo owner whether to (a)
+  accept a dated, narrowly-scoped allowlist for this one GHSA id (same
+  pattern already used for the moderate findings, just stricter/dated), or
+  (b) accept the `expo`/`expo-router` downgrade, or (c) leave CI red on
+  this check until upstream ships a fix.
