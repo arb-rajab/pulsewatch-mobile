@@ -10,6 +10,9 @@ jobs:
   app:
     name: App (typecheck, lint, tests)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +60,7 @@ jobs:
           } > /tmp/debug-output.txt 2>&1 || true
           tail -c 60000 /tmp/debug-output.txt > /tmp/debug-output-trunc.txt
           jq -Rs '{body: ("### Debug: failure output\n```\n" + . + "\n```")}' /tmp/debug-output-trunc.txt > /tmp/payload.json
-          curl -sS -X POST \
+          curl -sS -w '\nHTTP_STATUS:%{http_code}\n' -X POST \
             -H "Authorization: Bearer $GH_DEBUG_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
