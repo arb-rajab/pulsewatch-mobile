@@ -73,11 +73,28 @@ function runAudit() {
   }
 }
 
-function adviceUrlsFor(vuln) {
+// `npm audit --json` propagates severity up the WHOLE dependency chain: if
+// leaf package D has a real advisory, every package that depends on it
+// (C -> B -> A) also gets its own top-level entry in `vulnerabilities` at
+// the same (or higher) severity — but C/B/A's own `via` arrays list the
+// next package DOWN the chain as a plain package-name *string*, not the
+// advisory object. Only the leaf (D) has `via` entries that are objects
+// with a `url`. So resolving "is this finding fully explained by the
+// allowlist" has to walk the whole chain, not just look at one level.
+function adviceUrlsFor(vuln, vulnerabilitiesByName, seen = new Set()) {
   const urls = [];
+  if (seen.has(vuln.name)) {
+    return urls; // cycle guard; shouldn't happen, but never infinite-loop.
+  }
+  seen.add(vuln.name);
   for (const via of vuln.via ?? []) {
     if (via && typeof via === "object" && typeof via.url === "string") {
       urls.push(via.url);
+    } else if (typeof via === "string") {
+      const next = vulnerabilitiesByName[via];
+      if (next) {
+        urls.push(...adviceUrlsFor(next, vulnerabilitiesByName, seen));
+      }
     }
   }
   return urls;
@@ -103,7 +120,8 @@ function main() {
   }
 
   const report = runAudit();
-  const vulnerabilities = Object.values(report.vulnerabilities ?? {});
+  const vulnerabilitiesByName = report.vulnerabilities ?? {};
+  const vulnerabilities = Object.values(vulnerabilitiesByName);
   const atOrAboveHigh = vulnerabilities.filter((v) =>
     v.severity === "high" || v.severity === "critical",
   );
@@ -117,7 +135,7 @@ function main() {
   const unexplained = [];
 
   for (const vuln of atOrAboveHigh) {
-    const urls = adviceUrlsFor(vuln);
+    const urls = adviceUrlsFor(vuln, vulnerabilitiesByName);
     const isAllowlisted =
       urls.length > 0 &&
       urls.every((url) => [...allowedIds].some((id) => url.includes(id)));
@@ -127,6 +145,14 @@ function main() {
   }
 
   if (unexplained.length > 0) {
+    const summary = unexplained
+      .map((u) => `${u.name} (${u.severity}): ${u.urls.join(", ") || "no advisory URL"}`)
+      .join(" | ");
+    // Also as a GitHub Actions error annotation, so it's visible via the
+    // check-run annotations API even when the raw job log isn't reachable.
+    console.log(
+      `::error title=npm audit - unexplained findings::${summary}`,
+    );
     console.error(
       "npm audit found high/critical findings NOT covered by the " +
         "allowlist in scripts/check-npm-audit.mjs:",
@@ -147,4 +173,10 @@ function main() {
   process.exit(0);
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  console.log(`::error title=npm audit script crashed::${err?.message ?? err}`);
+  console.error(err);
+  process.exit(1);
+}
