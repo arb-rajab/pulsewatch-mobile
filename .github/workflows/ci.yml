@@ -32,20 +32,22 @@ jobs:
         run: npm run lint
 
       - name: test
-        run: npm test -- --ci
+        run: |
+          set -o pipefail
+          npm test -- --ci 2>&1 | tee /tmp/test-output.txt
 
       # TEMPORARY debug step (to be removed once the flaky test failure is
-      # diagnosed): same sandbox log-access limitation as before — posts the
-      # test output as a PR comment so it's readable via the (working)
-      # api.github.com instead of the (blocked) Actions log-download redirect.
-      - name: debug - post test output on failure
+      # diagnosed): posts the EXACT captured output of the step above (not a
+      # fresh re-run, which can pass even when the original run flaked) as a
+      # PR comment, since this sandbox can reach api.github.com but not the
+      # Actions log-download redirect target.
+      - name: debug - post captured test output on failure
         if: failure() && github.event_name == 'pull_request'
         env:
           GH_DEBUG_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm test -- --ci > /tmp/test-output.txt 2>&1 || true
           tail -c 60000 /tmp/test-output.txt > /tmp/test-output-trunc.txt
-          jq -Rs '{body: ("### Debug: test output (retry)\n```\n" + . + "\n```")}' /tmp/test-output-trunc.txt > /tmp/payload.json
+          jq -Rs '{body: ("### Debug: captured test step output\n```\n" + . + "\n```")}' /tmp/test-output-trunc.txt > /tmp/payload.json
           curl -sS -X POST \
             -H "Authorization: Bearer $GH_DEBUG_TOKEN" \
             -H "Accept: application/vnd.github+json" \
