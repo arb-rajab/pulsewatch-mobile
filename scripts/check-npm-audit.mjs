@@ -43,6 +43,22 @@ const ALLOWLIST = [
       "Re-check before the expiry date: renew if still unfixed upstream, " +
       "drop this entry the moment a real fix ships.",
   },
+  {
+    id: "GHSA-vfj7-8cjw-p6xm",
+    package: "braces",
+    expires: "2026-11-15",
+    reason:
+      "Stack-exhaustion DoS in braces (recursive AST walkers lack depth " +
+      "guards, so deeply nested brace patterns crash the process), high " +
+      "severity (CVSS 8.7). Reached only transitively through micromatch " +
+      "from build/test tooling (metro, jest, @expo/cli, react-native's " +
+      "CLI plugin) that runs on developer machines and CI against " +
+      "repo-controlled glob patterns — never in the app bundle a device " +
+      "runs. No patched braces release exists (3.0.3 is the latest, and " +
+      "the advisory lists no fixed version), so there is nothing to " +
+      "upgrade to. Re-check before the expiry date: renew if still " +
+      "unfixed upstream, drop this entry the moment a real fix ships.",
+  },
 ];
 
 function todayUtc() {
