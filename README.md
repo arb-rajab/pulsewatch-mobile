@@ -147,6 +147,12 @@ outright until a human either renews it (if still unfixed upstream) or
 removes it (if a fix finally shipped) — see the script's own header for
 the full reasoning.
 
+**A second high-severity finding (`braces` / `GHSA-vfj7-8cjw-p6xm`, a
+stack-exhaustion DoS on deeply nested brace patterns) is allowlisted the
+same way** — build/test tooling only (via `micromatch`), no patched
+`braces` release exists as of 2026-10-05, and the entry expires
+2026-11-15.
+
 **No branch protection on `main`.** GitHub's branch API reports `main` as
 `"protected": false` — there is no branch protection rule at all, so none
 of CI's three jobs (`app`: typecheck/lint/tests/`npm audit`; `gitleaks`:
