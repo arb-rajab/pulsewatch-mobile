@@ -26,6 +26,14 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@react-native/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # The lint toolchain pulled in by eslint-config-expo (typescript-eslint,
+      # eslint-plugin-react) does not load under TypeScript 7 or ESLint 10 yet:
+      # lint crashes in ts-api-utils / eslint-plugin-react. Revisit when
+      # eslint-config-expo supports them.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
   # Actions used in .github/workflows
   - package-ecosystem: github-actions
     directory: "/"
