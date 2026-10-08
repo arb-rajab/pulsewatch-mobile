@@ -2,21 +2,12 @@
 
 ## Session continuity notes (quota-reduction — repo-specific, not generic advice)
 
-- **No conventional `main` existed until the 2026-09-15 merge-finishing
-  session.** This repo was created empty; the rebuild session pushed the
-  entire app straight to `claude/pulsewatch-mobile-rebuild-wab4mn`, which
-  GitHub then made the *default branch* by default (there was no `main`
-  to default to). CI's `push`/`pull_request` triggers target `main`, so
-  **no workflow ever ran** until a `main` branch was created at the same
-  commit. `main` and the rebuild branch are now identical (0 commits
-  apart) — there is no PR to open between them, and GitHub will refuse
-  one ("No commits between main and ..."). The repo's *default branch
-  setting* itself is still `claude/pulsewatch-mobile-rebuild-wab4mn` —
-  no tool available to any session so far exposes changing that (GitHub
-  Settings → Branches, or the REST `PATCH /repos/{owner}/{repo}` API
-  with `default_branch`); a session with that capability should switch
-  it to `main`. Until then, don't re-diagnose this as a fresh problem —
-  it's this same known gap.
+- **The default branch is `main` (resolved; checked 2026-10-08).** The
+  repo started with the whole app on `claude/pulsewatch-mobile-rebuild-wab4mn`,
+  which GitHub made the default branch, so CI (which targets `main`) never
+  ran until `main` was created at the same commit. The default branch has
+  since been switched to `main` and the rebuild branch deleted. Nothing
+  left to do here; don't re-diagnose it.
 - **Dependabot alerts and CodeQL code-scanning alerts are not
   enumerable by any MCP tool available in this environment**, and the
   `gh` CLI is not available either. Don't ask a future session to
