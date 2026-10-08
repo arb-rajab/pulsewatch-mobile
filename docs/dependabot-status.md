@@ -13,6 +13,7 @@ _Last updated: 2026-10-08. Maintained during the Dependabot clean-up pass; updat
 
 - Open Dependabot PRs: 0 (each merged or closed only after reading its checks).
 - Default-branch CI: green at last check.
+- Last full rescan: 2026-10-08. Checked open PRs, default-branch and scheduled CI, Dependabot update jobs, ecosystem coverage against the manifests in the repo, Actions pins, exemption expiry dates, stray branches, and (new this pass) a local full-history gitleaks 8.28.0 scan. No new gaps. The repo's default branch is now `main` and the old rebuild branch is gone (corrected in Notes).
 
 ## Time-limited exemptions
 
@@ -21,7 +22,8 @@ _Last updated: 2026-10-08. Maintained during the Dependabot clean-up pass; updat
 ## Notes
 
 - `npm install`/`npm ci` need `--legacy-peer-deps` for this SDK 57 tree.
-- The default branch setting of the repo may still point at the old rebuild branch (see CLAUDE.md); that is a repo-settings item for the owner.
+- The repo's default branch is `main` (checked through the API on 2026-10-08), and `claude/pulsewatch-mobile-rebuild-wab4mn` no longer exists. The older note about switching it is resolved.
+- Merge policy (deliberate choice by the repo owner, 2026-10-08): every PR, major-version dependency bumps included, is merged as soon as all of its required checks are green, confirmed per PR. This repo is a code showcase with no business or sensitive dependency, so green checks are the only gate. Red, pending or conflicted PRs are fixed or closed instead.
 
 ## Deferred (not re-raised each pass)
 
